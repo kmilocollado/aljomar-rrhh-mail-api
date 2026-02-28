@@ -1,6 +1,7 @@
 const nodemailer = require('nodemailer');
 
 const ALLOWED_ORIGIN = process.env.ALLOWED_ORIGIN || '*';
+const TO_EMAILS = 'marketing@aljomar.es, rrhh@aljomar.es';
 const FROM_NAME = process.env.PS_MAIL_FROM_NAME || 'ALJOMAR';
 
 function getParams(req) {
@@ -17,29 +18,12 @@ function getParams(req) {
   return {};
 }
 
-async function sendRecetario(params) {
+async function sendMail(params) {
   const user = process.env.PS_MAIL_USER;
   const pass = process.env.PS_MAIL_PASSWD;
-  const pdfUrl = process.env.RECETARIO_PDF_URL;
-
   if (!user || !pass) {
     throw new Error('Faltan credenciales SMTP (PS_MAIL_USER / PS_MAIL_PASSWD)');
   }
-  if (!pdfUrl) {
-    throw new Error('Falta RECETARIO_PDF_URL (URL pública del PDF del recetario)');
-  }
-
-  const email = (params.email || '').trim();
-  const nombre = (params.nombre || '').trim();
-  if (!email || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
-    throw new Error('Email no válido');
-  }
-
-  const pdfResponse = await fetch(pdfUrl);
-  if (!pdfResponse.ok) {
-    throw new Error('No se pudo obtener el PDF del recetario');
-  }
-  const pdfBuffer = Buffer.from(await pdfResponse.arrayBuffer());
 
   const transporter = nodemailer.createTransport({
     host: process.env.PS_MAIL_SERVER || 'smtp.office365.com',
@@ -50,24 +34,36 @@ async function sendRecetario(params) {
     tls: { ciphers: 'SSLv3' }
   });
 
-  const subject = process.env.RECETARIO_EMAIL_SUBJECT || 'Tu recetario Aljomar';
-  const text = nombre
-    ? `Hola ${nombre},\n\nAquí tienes el recetario de Aljomar en PDF.\n\nUn saludo.`
-    : 'Aquí tienes el recetario de Aljomar en PDF.';
+  const nombre = (params.nombre || '').trim();
+  const apellidos = (params.apellidos || '').trim();
+  const subject = `Nueva candidatura: ${nombre} ${apellidos}`.trim() + ' - Aljomar';
+  const text = [
+    `Nombre: ${nombre}`,
+    `Apellidos: ${apellidos}`,
+    `Email: ${(params.email || '').trim()}`,
+    `Teléfono: ${(params.telefono || '').trim()}`,
+    '',
+    'Comentarios:',
+    (params.mensaje || '(sin comentarios)').trim()
+  ].join('\n');
 
-  await transporter.sendMail({
-    from: `"${FROM_NAME}" <${user}>`,
-    to: email,
+  const mailOptions = {
+    from: `"${FROM_NAME}" <${process.env.PS_MAIL_FROM || user}>`,
+    to: TO_EMAILS,
     subject,
     text,
-    attachments: [
-      {
-        filename: 'recetario-aljomar.pdf',
-        content: pdfBuffer,
-        contentType: 'application/pdf'
-      }
-    ]
-  });
+    replyTo: (params.email || '').trim() || undefined
+  };
+
+  if (params.fileData && params.fileName) {
+    mailOptions.attachments = [{
+      filename: params.fileName,
+      content: Buffer.from(params.fileData, 'base64'),
+      contentType: params.fileType || undefined
+    }];
+  }
+
+  await transporter.sendMail(mailOptions);
 }
 
 module.exports = async (req, res) => {
@@ -86,10 +82,10 @@ module.exports = async (req, res) => {
   const params = getParams(req);
 
   try {
-    await sendRecetario(params);
+    await sendMail(params);
     return res.status(200).json({ status: 'ok' });
   } catch (err) {
-    console.error('Recetario mail error:', err.message);
+    console.error('RRHH mail error:', err.message);
     return res.status(500).json({
       message: err.message || 'Error al enviar el correo'
     });
