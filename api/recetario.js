@@ -1,6 +1,7 @@
 const nodemailer = require('nodemailer');
 
 const ALLOWED_ORIGIN = process.env.ALLOWED_ORIGIN || '*';
+const FROM_NAME = process.env.PS_MAIL_FROM_NAME || 'ALJOMAR';
 
 function getParams(req) {
   if (req.body && typeof req.body === 'object') {
@@ -55,7 +56,7 @@ async function sendRecetario(params) {
     : 'Aquí tienes el recetario de Aljomar en PDF.';
 
   await transporter.sendMail({
-    from: process.env.PS_MAIL_FROM || user,
+    from: `"${FROM_NAME}" <${user}>`,
     to: email,
     subject,
     text,
